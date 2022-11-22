@@ -36,13 +36,13 @@ cv2.namedWindow('PuddingMaprawnon2', cv2.WINDOW_NORMAL)
 
 #initial localhost server
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-serveraddr = ("127.0.0.1", 8808)
+serveraddr = ("127.0.0.1", 5202)
 
 # Initialize a variable to store the time of the previous frame.
 time1 = 0
 
 # Initialize a variable to store the state of the game (started or not).
-game_started = True
+game_started = False
 
 # Initialize a variable to store the index of the current horizontal position of the person.
 # At Start the character is at center so the index is 1 and it can move left (value 0) and right (value 2).
@@ -62,11 +62,10 @@ counter = 0
 frame_countdown = 10
 
 # Iterate until the webcam is accessed successfully.
+action = 0
+position = 0
+gamemode = 0
 while camera_video.isOpened():
-
-    action = 0
-    position = 0
-    gamemode = 0
     # Read a frame.
     ok, frame = camera_video.read()
 
@@ -91,9 +90,10 @@ while camera_video.isOpened():
 
         # Get horizontal position of the person in the frame.
         frame, horizontal_position = checkLeftRight(frame, results, draw=True)
-
+        if horizontal_position == 'Center':
+            position = positions["center"]
         # Check if the person has moved to left from center or to center from right.
-        if (horizontal_position == 'Left' and x_pos_index != 0) or (
+        elif (horizontal_position == 'Left' and x_pos_index != 0) or (
                 horizontal_position == 'Center' and x_pos_index == 2):
 
             # Press the left arrow key.
@@ -119,6 +119,11 @@ while camera_video.isOpened():
         # Command to Start or resume the game.
         # ------------------------------------------------------------------------------------------------------------------
 
+        if not game_started:
+            cv2.putText(frame, "please join your hand together to start the game", (150, 480), cv2.FONT_HERSHEY_PLAIN, 2,
+                        (0, 0, 0),
+                        3)
+
         # Check if the left and right hands are joined.
         if checkHandsJoined(frame, results)[1] == 'Hands Joined':
 
@@ -134,8 +139,20 @@ while camera_video.isOpened():
                 if not (game_started):
                     # Update the value of the variable that stores the game state.
                     game_started = True
+                    # update wait time so the time use for pausing will be 7/fps = 1 sec
+                    frame_countdown = 7
 
                     gamemode = gamemodes["ingame"]
+
+                    # Retreive the y-coordinate of the left shoulder landmark.
+                    left_y = int(results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].y * frame_height)
+
+                    # Retreive the y-coordinate of the right shoulder landmark.
+                    # Retreive the y-coordinate of the right shoulder landmark.
+                    right_y = int(results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y * frame_height)
+
+                    # Calculate the intial y-coordinate of the mid-point of both shoulders of the person.
+                    MID_Y = abs(right_y + left_y) // 2 - 30
 
 
                 # ----------------------------------------------------------------------------------------------------------
@@ -147,6 +164,8 @@ while camera_video.isOpened():
                     # Update game state to pause
                     game_started = False
                     gamemode = gamemodes["pause"]
+                    # update wait time so the time use for pausing will be 30/fps = 3 sec
+                    frame_countdown = 30
 
                     # Press the space key.
                     # pyautogui.press('space')
@@ -167,21 +186,11 @@ while camera_video.isOpened():
         # Commands to control the vertical movements of the character.
         # ------------------------------------------------------------------------------------------------------------------
 
-        # Retreive the y-coordinate of the left shoulder landmark.
-        left_y = int(results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].y * frame_height)
-
-        # Retreive the y-coordinate of the right shoulder landmark.
-        # Retreive the y-coordinate of the right shoulder landmark.
-        right_y = int(results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y * frame_height)
-
-        # Calculate the intial y-coordinate of the mid-point of both shoulders of the person.
-        MID_Y = abs(right_y + left_y) // 2
-
         # Check if the intial y-coordinate of the mid-point of both shoulders of the person has a value.
         if MID_Y:
 
             # Get posture (jumping, crouching or standing) of the person in the frame.
-            frame, posture = checkJumpCrouch(frame, results, MID_Y, draw=False)
+            frame, posture = checkJumpCrouch(frame, results, MID_Y, draw=True)
 
             # Check if the person has jumped.
             if posture == 'Jumping' and y_pos_index == 1:
@@ -194,7 +203,7 @@ while camera_video.isOpened():
                 y_pos_index += 1
 
                 # Check if the person has crouched.
-            elif posture == 'Slide' and y_pos_index == 1:
+            elif posture == 'Crouching' and y_pos_index == 1:
 
                 # Press the down arrow key
                 # pyautogui.press('down')
@@ -225,7 +234,6 @@ while camera_video.isOpened():
 
     # Set the time for this frame to the current time.
     time2 = time()
-
     # Check if the difference between the previous and this frame time > 0 to avoid division by zero.
     if (time2 - time1) > 0:
         # Calculate the number of frames per second.
@@ -240,11 +248,8 @@ while camera_video.isOpened():
     time1 = time2
 
     # ----------------------------------------------------------------------------------------------------------------------
-    # TODO: send position,action, gamemode to unity
 
-    # sock.sendto(str.encode(str(action)), serveraddr)
-    # sock.sendto(str.encode(str(position)), serveraddr)
-    # sock.sendto(str.encode(str(gamemode)), serveraddr)
+    sock.sendto(str.encode(f"{str(action)},{str(position)},{str(gamemode)}"), serveraddr)
     # Display the frame.
     cv2.imshow('PuddingMaprawnon2', frame)
 
